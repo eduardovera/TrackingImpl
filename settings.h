@@ -37,16 +37,15 @@ class Point : public matrix<double, 1, 3> {
             this->operator ()(2) = 1.0;
         }
 
-        Point& operator * (const matrix<double, 3, 3> &T, const Point &p) {
-            matrix<double, 1, 3> p_temp;
-            p_temp(0) = p(0);
-            p_temp(1) = p(1);
-            p_temp(2) = p(2);
-
-            return (T * p_temp);
-        }
 
 };
+
+Point operator*(const matrix<double, 3, 3> &T, const Point &p) {
+    matrix<double, 1, 3> p_ = (matrix<double, 1, 3>) p * T;
+    return (Point)(p_);
+}
+
+
 
 class Tracking_settings {
 
@@ -98,7 +97,7 @@ class Tracking_settings {
         Tracking_settings() {
             load_instrinsic("input/intrinsic.dat");
             load_images("input/templeR0035.png", "input/templeR0039.png");
-            load_matches("input/matches.txt");
+            load_matches("input/m_manual.txt");
         }
 
 
