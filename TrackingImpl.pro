@@ -8,6 +8,9 @@ INCLUDEPATH += include
 SOURCES += main.cpp
 
 HEADERS += \
-    settings.h
+    settings.h \
+    utils.h \
+    Point.h \
+    ransac.h
 
 LIBS += -lX11 -lpthread

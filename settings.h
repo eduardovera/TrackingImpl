@@ -6,46 +6,13 @@
 #include <vector>
 #include <dlib/matrix.h>
 #include <dlib/string.h>
+#include <Point.h>
 #include <cassert>
 #include <CImg.h>
 
 using namespace std;
 using namespace dlib;
 using namespace cimg_library;
-
-class Point : public matrix<double, 1, 3> {
-
-    public:
-
-        Point() {
-
-        }
-
-        Point(matrix<double, 1, 3> &m) {
-
-            double inv_m2 = 1.0 / m(2);
-
-            this->operator ()(0) = m(0) * inv_m2;
-            this->operator ()(1) = m(1) * inv_m2;
-            this->operator ()(2) = 1.0;
-
-        }
-
-        Point(double x, double y) {
-            this->operator ()(0) = x;
-            this->operator ()(1) = y;
-            this->operator ()(2) = 1.0;
-        }
-
-
-};
-
-Point operator*(const matrix<double, 3, 3> &T, const Point &p) {
-    matrix<double, 1, 3> p_ = (matrix<double, 1, 3>) p * T;
-    return (Point)(p_);
-}
-
-
 
 class Tracking_settings {
 
@@ -65,6 +32,25 @@ class Tracking_settings {
                 instrinsic(5) = stod(line);
             }
 
+        }
+
+        void load_extrinsic(string filename, matrix<double, 3, 3> &R, matrix<double, 3, 1> &t) {
+            ifstream file(filename);
+            string line;
+            if (file.is_open()) {
+                for (int j = 0; j < 3; j++) {
+                    for (int i = 0; i < 3; i++) {
+                        getline(file, line);
+                        R(j, i) = stod(line);
+                    }
+                }
+                int i = 0;
+                while (i != 3) {
+                    getline(file, line);
+                    t(i) = stod(line);
+                    i++;
+                }
+            }
         }
 
         void load_images(string filenameA, string filenameB) {
@@ -90,14 +76,23 @@ class Tracking_settings {
 
     public:
         matrix<double> instrinsic;
+        matrix<double, 3, 3> r_1;
+        matrix<double, 3, 1> t_1;
+
+        matrix<double, 3, 3> r_2;
+        matrix<double, 3, 1> t_2;
+
         CImg<uint8_t> image_A;
         CImg<uint8_t> image_B;
         std::vector<pair<Point, Point>> matches;
 
+
         Tracking_settings() {
-            load_instrinsic("input/intrinsic.dat");
-            load_images("input/templeR0035.png", "input/templeR0039.png");
-            load_matches("input/m_manual.txt");
+            load_instrinsic("input/intrinsic-temple.dat");
+            load_extrinsic("input/extrinsic-temple-R0039.dat", r_1, t_1);
+            load_extrinsic("input/extrinsic-temple-R0035.dat", r_2, t_2);
+//            load_images("input/templeR0039.png", "input/templeR0035.png");
+            load_matches("input/matches.txt");
         }
 
 
