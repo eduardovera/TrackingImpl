@@ -92,7 +92,7 @@ class Tracking_settings {
             load_extrinsic("input/extrinsic-temple-R0039.dat", r_1, t_1);
             load_extrinsic("input/extrinsic-temple-R0035.dat", r_2, t_2);
 //            load_images("input/templeR0039.png", "input/templeR0035.png");
-            load_matches("input/matches.txt");
+            load_matches("input/m_manual-temple.txt");
         }
 
 

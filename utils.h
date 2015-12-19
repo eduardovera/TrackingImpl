@@ -14,9 +14,9 @@ enum TYPE_NULL_SPACE_VECTOR {
 };
 
 matrix<double> getNullSpaceVector(const matrix<double> &m, TYPE_NULL_SPACE_VECTOR type) {
-    matrix<double> u, s, vt;
+    matrix<double> u, s, v;
     matrix<double> null_space_vector;
-    svd(m, u, s, vt);
+    svd(m, u, s, v);
     double min_autovalue = numeric_limits<double>::max();
     int min_index = -1;
     for (int i = 0; i < s.nr(); i++) {
@@ -26,16 +26,16 @@ matrix<double> getNullSpaceVector(const matrix<double> &m, TYPE_NULL_SPACE_VECTO
         }
     }
     if (type == RIGHT_NULL_SPACE_VECTOR) {
-        null_space_vector = colm(vt, min_index);
-    } else {
+        null_space_vector = colm(v, min_index);
+    } else if (type == LEFT_NULL_SPACE_VECTOR) {
         null_space_vector = colm(u, min_index);
     }
     return null_space_vector;
 }
 
 void force_restriction(matrix<double, 3, 3> &F) {
-    matrix<double, 3, 3> u, s, vt;
-    svd(F, u, s, vt);
+    matrix<double, 3, 3> u, s, v;
+    svd(F, u, s, v);
     double min_autovalue = numeric_limits<double>::max();
     int min_index = -1;
     for (int i = 0; i < s.nr(); i++) {
@@ -45,10 +45,10 @@ void force_restriction(matrix<double, 3, 3> &F) {
         }
     }
     s(min_index, min_index) = 0;
-    F = u * s * vt;
+    F = u * (s * trans(v));
 }
 
-double getQuadraticDistance(const Point &p1, const Point &p2) {
+double distanceBetweenPoints(const Point &p1, const Point &p2) {
     return ( ( (p1(0) - p2(0)) * (p1(0) - p2(0)) ) + ( (p1(1) - p2(1)) * (p1(1) - p2(1))) );
 }
 
@@ -84,39 +84,51 @@ pair<matrix<double, 3, 4>, matrix<double, 3, 4>> getProjectionMatrixes(matrix<do
 
     matrix<double, 3, 4> P_;
     matrix<double, 3, 1> right_e = getNullSpaceVector(F, RIGHT_NULL_SPACE_VECTOR);
+
     set_colm(P_, range(0, 2)) = crossMatrixForm(right_e) * F;
     set_colm(P_, 3) = right_e;
 
     return pair<matrix<double, 3, 4>, matrix<double, 3, 4>>(P, P_);
 }
 
-matrix<double, 4, 1> DLT_Triangulation(const Point &x, const Point &x_, const pair<matrix<double, 3, 4>, matrix<double, 3, 4>> &projectionMatrixes) {
-    matrix<double, 3, 4> A;
-    matrix<double, 3, 4> P = projectionMatrixes.first;
-    matrix<double, 3, 4> P_ = projectionMatrixes.second;
+matrix<double, 4, 1> DLT_Triangulation(const Point &x, const Point &x_, const pair<matrix<double, 3, 4>, const matrix<double, 3, 4>> &projectionMatrixes) {
+    matrix<double, 4, 4> A;
+    const matrix<double, 3, 4> P = projectionMatrixes.first;
+    const matrix<double, 3, 4> P_ = projectionMatrixes.second;
 
-    matrix<double, 3, 1> k;
-
-    set_rowm(A, 0) = x(0) * rowm(P, 2) - rowm(P, 0);
-    set_rowm(A, 1) = x(1) * rowm(P, 2) - rowm(P, 1);
-    set_rowm(A, 2) = x_(0) * rowm(P_, 2) - rowm(P_, 0);
-    set_rowm(A, 3) = x_(1) * rowm(P_, 2) - rowm(P_, 1);
+    set_rowm(A, 0) = (x(0) * rowm(P, 2)) - rowm(P, 0);
+    set_rowm(A, 1) = (x(1) * rowm(P, 2)) - rowm(P, 1);
+    set_rowm(A, 2) = (x_(0) * rowm(P_, 2)) - rowm(P_, 0);
+    set_rowm(A, 3) = (x_(1) * rowm(P_, 2)) - rowm(P_, 1);
     matrix<double, 4, 1> X = getNullSpaceVector(A, RIGHT_NULL_SPACE_VECTOR);
 
-    X /= X(3);
+//    X /= X(3);
 
-    k = P * X;
+//    matrix<double> k = P_ * X;
 
-//    cout << x << endl;
+//    cout << x_ << endl;
 //    cout << X << endl;
 //    cout << k / k(2) << endl;
-
 //    getchar();
-
 
     return X;
 
 }
+
+double getQuadraticDistance(const std::vector<pair<Point, Point>> &matches, const pair<matrix<double, 3, 4>, matrix<double, 3, 4>> &projectionMatrixes) {
+    double error = 0.0;
+    matrix<double, 4, 1> X;
+    matrix<double, 3, 1> p1_est;
+    matrix<double, 3, 1> p2_est;
+    for (const pair<Point, Point> &p : matches) {
+        X = DLT_Triangulation(p.first, p.second, projectionMatrixes);
+        p1_est = projectionMatrixes.first * X;
+        p2_est = projectionMatrixes.second * X;
+        error += distanceBetweenPoints(p.first, (Point)p1_est) + distanceBetweenPoints(p.second, (Point)p2_est);
+    }
+    return error;
+}
+
 
 #endif // UTILS
 

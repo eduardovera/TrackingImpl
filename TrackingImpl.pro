@@ -11,6 +11,7 @@ HEADERS += \
     settings.h \
     utils.h \
     Point.h \
-    ransac.h
+    ransac.h \
+    solver.h
 
 LIBS += -lX11 -lpthread

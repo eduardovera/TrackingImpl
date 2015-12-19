@@ -7,46 +7,100 @@
 #include <dlib/matrix.h>
 #include <Point.h>
 #include <chrono>
+#include <solver.h>
 
 using namespace std;
 
-pair<matrix<double, 3, 4>, matrix<double, 3, 4>> getProjectionMatrixesGroundTruth(Tracking_settings &settings) {
-    matrix<double, 3, 4> extrinsic, P, P_;
-    set_colm(extrinsic, range(0, 2)) = settings.r_1;
-    set_colm(extrinsic, 3) = settings.t_1;
-    P = settings.instrinsic * extrinsic;
+struct eigenvalue_sorter {
 
-    set_colm(extrinsic, range(0, 2)) = settings.r_2;
-    set_colm(extrinsic, 3) = settings.t_2;
-    P_ = settings.instrinsic * extrinsic;
+    public:
+        double value;
+        int index;
 
+        eigenvalue_sorter(const double value, const int index) {
+            this->index = index;
+            this->value = value;
+        }
 
-    return pair<matrix<double, 3, 4>, matrix<double, 3, 4>>(P, P_);
+        inline bool operator < (eigenvalue_sorter e) const {
+            return value < e.value;
+        }
 
+};
+
+matrix<double> getFundamental7Points(Tracking_settings &settings, const int &iterations = 1) {
+    matrix<double> U, S, V;
+    matrix<double, 9, 1> f1, f2;
+    matrix<double, 3, 3> F1, F2;
+    matrix<double> A(settings.matches.size(), 9);
+    double index_min_error;
+    std::vector<matrix<double, 3, 3>> fundamentals;
+
+    int itr = 0;
+    while (itr != iterations) {
+        for (long j = 0; j < A.nr(); j++) {
+            A(j, 0) = settings.matches[j].second(0) * settings.matches[j].first(0);
+            A(j, 1) = settings.matches[j].second(0) * settings.matches[j].first(1);
+            A(j, 2) = settings.matches[j].second(0);
+            A(j, 3) = settings.matches[j].second(1) * settings.matches[j].first(0);
+            A(j, 4) = settings.matches[j].second(1) * settings.matches[j].first(1);
+            A(j, 5) = settings.matches[j].second(1);
+            A(j, 6) = settings.matches[j].first(0);
+            A(j, 7) = settings.matches[j].first(1);
+            A(j, 8) = 1;
+        }
+        svd(A, U, S, V);
+
+        std::vector<eigenvalue_sorter> eigenvalues;
+        for (int i = 0; i < S.nc(); i++) {
+            eigenvalues.push_back(eigenvalue_sorter(S(i, i), i));
+         }
+
+        sort(eigenvalues.begin(), eigenvalues.end());
+
+        for (int i = 0; i < V.nc(); i++) {
+            f1(i) = V(i, eigenvalues[1].index);
+            f2(i) = V(i, eigenvalues[0].index);
+        }
+
+        F1 = reshape(f1, 3, 3);
+        F2 = reshape(f2, 3, 3);
+
+        fundamentals = solve(F1, F2);
+
+        double min_error = numeric_limits<double>::max();
+        double error;
+        for (size_t i = 0; i < fundamentals.size(); i++) {
+            error = getQuadraticDistance(settings.matches, getProjectionMatrixes(fundamentals[i]));
+            if (error < min_error) {
+                min_error = error;
+                index_min_error = i;
+            }
+        }
+        matrix<double, 4, 1> X;
+        matrix<double, 3, 1> p1_est, p2_est;
+        pair<matrix<double, 3, 4>, matrix<double, 3, 4>> projectionMatrixes = getProjectionMatrixes(fundamentals[index_min_error]);
+
+        for (pair<Point, Point> &p : settings.matches) {
+            X = DLT_Triangulation(p.first, p.second, projectionMatrixes);
+            p1_est = projectionMatrixes.first * X;
+            p2_est = projectionMatrixes.second * X;
+            p = make_pair<Point, Point>((Point) p1_est, (Point) p2_est);
+        }
+
+        itr++;
+
+    }
+
+    return fundamentals[index_min_error];
 }
 
-matrix<double, 3, 3> getFundamentalGroundTruth(Tracking_settings &settings) {
-    pair<matrix<double, 3, 4>, matrix<double, 3, 4>> projectionMatrixes = getProjectionMatrixesGroundTruth(settings);
-    matrix<double, 3, 4> P = projectionMatrixes.first;
-    matrix<double, 3, 4> P_ = projectionMatrixes.second;
-
-    matrix<double> C = getNullSpaceVector(P, RIGHT_NULL_SPACE_VECTOR);
-
-    matrix<double, 3, 1> e_ = P_ * C;
-
-    matrix<double, 3, 3> F = crossMatrixForm(e_) * P_ * pinv(P);
-
-    return F;
-}
-
-
-matrix<double> getFundamentalMatrix(Tracking_settings &settings, const int &iterations = 1) {
+matrix<double> getFundamental8Points(Tracking_settings &settings, const int &iterations = 1) {
 
     matrix<double> A(settings.matches.size(), 9);
     matrix<double, 4, 1> X;
     matrix<double, 3, 3> F;
     matrix<double, 3, 1> p1_est, p2_est;
-    double error = 0.0, error2 = 0.0;
 
     int i = 0;
     while (i != iterations) {
@@ -63,84 +117,58 @@ matrix<double> getFundamentalMatrix(Tracking_settings &settings, const int &iter
         }
 
         F = reshape(getNullSpaceVector(A, RIGHT_NULL_SPACE_VECTOR), 3, 3);
-//        cout << F << endl;
-//        F = getFundamentalGroundTruth(settings);
-//        cout << getFundamentalGroundTruth(settings) << endl;
-//        getchar();
+        force_restriction(F);
         pair<matrix<double, 3, 4>, matrix<double, 3, 4>> projectionMatrixes = getProjectionMatrixes(F);
 
-        error = 0.0;
-        error2 = 0.0;
         for (pair<Point, Point> &p : settings.matches) {
             X = DLT_Triangulation(p.first, p.second, projectionMatrixes);
             p1_est = projectionMatrixes.first * X;
             p2_est = projectionMatrixes.second * X;
-            error += getQuadraticDistance(p.first, (Point)p1_est) + getQuadraticDistance(p.second, (Point)p2_est);
-            error2 += getGeometricDistance(p.first.innerMatrix(), p.second.innerMatrix(), F);
-//            cout << (p.first) << " " << (p.second) << endl;
-            p = make_pair<Point, Point>((Point)p1_est, (Point)p2_est);
-//            cout << trans(p1_est / p1_est(2)) << " " << trans(p2_est / p2_est(2)) << endl;
-//            getchar();
+
+            p = make_pair<Point, Point>((Point) p1_est, (Point) p2_est);
         }
         i++;
     }
-    cout << "Error: " << error << endl;
-    cout << "Error GEOM: " << error2 << endl;
 
     return F;
 
 }
 
 int main() {
-
     auto t_start = std::chrono::high_resolution_clock::now();
 
     Tracking_settings settings;
 
-//    getFundamentalGroundTruth(settings);
-
-//    cout << settings.instrinsic << endl;
-//    cout << settings.image_A.width() << " x " << settings.image_A.height() << endl;
-//    cout << settings.image_B.width() << " x " << settings.image_B.height() << endl;
-
-    matrix<double, 3, 3> F = getFundamentalMatrix(settings);
-    matrix<double, 3, 1> right_e = getNullSpaceVector(F, RIGHT_NULL_SPACE_VECTOR);
-//    cout << right_e / right_e(2) << endl;
-
-    matrix<double, 3, 3> E = trans(settings.instrinsic) * F * settings.instrinsic;
-//    cout << F << endl;
-
-    E /= E(2, 2);
-
-    cout << E << endl;
-
-    matrix<double, 3, 3> u, s, v, W, Tx, R, Z;
+    matrix<double, 3, 3> u, s, v, W, Tx, R, E_;
 
     W = zeros_matrix(W);
     W(0, 0) = 1;
     W(1, 2) = -1;
     W(2, 1) = 1;
 
-    Z = zeros_matrix(Z);
-    Z(0, 1) = 1;
-    Z(1, 0) = -1;
+//    W(2, 2) = 1;
+//    W(0, 1) = 1;
+//    W(1, 0) = -1;
+
+    matrix<double, 3, 3> F = getFundamental8Points(settings, 5);
+
+    pair<matrix<double, 3, 4>, matrix<double, 3, 4>> projectionMatrixes = getProjectionMatrixes(F);
+    cout << "ERROR: " << getQuadraticDistance(settings.matches, projectionMatrixes) << endl;
+
+    matrix<double, 3, 3> E = trans(settings.instrinsic) * (F * settings.instrinsic);
+    cout << "Essential Matrix: " << endl << E / E(2, 2) << endl;
 
     svd(E, u, s, v);
-
     cout << s << endl;
 
     Tx = u * W * s * trans(u);
-//    cout << Tx << endl;
+    cout << "[T]x: " << endl << Tx / Tx(0, 1) << endl;
 
     R = u * inv(W) * trans(v);
-//    R = u * trans(W) * vt;
-//    cout << R << endl;
+    cout << "R: " << endl << R / R(2, 2)<< endl;
 
-    Z = Tx * R;
-
-    Z /= Z(2, 2);
-
-    cout << Z << endl;
+    E_ = Tx * R;
+    cout << "Rebuilt Essential Matrix: " << endl << E_ / E_(2, 2)  << endl;
 
     auto t_elasped = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count()/1000.0;
     std::cout << "Tracking:                Total ["  << t_elasped << "]   "  << 1.0/t_elasped << " fps\n";
